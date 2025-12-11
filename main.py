@@ -43,10 +43,10 @@ class Ticket:
     def from_entry(cls, entry: ET.Element) -> "Ticket":
         raw_title = (entry.findtext("atom:title", default="", namespaces=ATOM_NS) or "").strip()
         updated = (entry.findtext("atom:updated", default="", namespaces=ATOM_NS) or "").strip()
+        entry_id = entry.findtext("atom:id", default="", namespaces=ATOM_NS) or ""
         category = entry.find("atom:category", ATOM_NS)
         status = category.get("term") if category is not None and category.get("term") else "unknown"
-        link = entry.find("atom:link", ATOM_NS)
-        url = link.get("href") if link is not None and link.get("href") else ""
+        url = entry_id  # Redmineのatom:idはチケットURLが入るケースが多い
         ticket_id = extract_ticket_id(entry, raw_title)
         subject = extract_subject(raw_title)
         return cls(ticket_id=ticket_id, subject=subject, status=status, updated_on=updated, url=url)
@@ -194,7 +194,13 @@ class MainWindow(QMainWindow):
         self.table.setHorizontalHeaderLabels(["ID", "件名", "ステータス", "更新日", "済", "済日時", "済ボタン", "開く"])
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.MultiSelection)
-        self.table.horizontalHeader().setStretchLastSection(True)
+        header = self.table.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(header.Fixed)
+        # 固定幅を設定（必要に応じて調整してください）
+        fixed_widths = [80, 320, 120, 160, 50, 160, 80, 80]
+        for idx, w in enumerate(fixed_widths):
+            header.resizeSection(idx, w)
         self.table.verticalHeader().setVisible(False)
 
         self.build_ui()
@@ -352,7 +358,8 @@ class MainWindow(QMainWindow):
             open_btn.clicked.connect(lambda _, tid=t.ticket_id: self.open_ticket(tid))
             self.table.setCellWidget(row, 7, open_btn)
 
-        self.table.resizeColumnsToContents()
+        # 固定幅設定を維持
+        # （ヘッダのリサイズ設定で固定にしているため、ここでは何もしない）
 
     def toggle_selected(self) -> None:
         selected = self.table.selectionModel().selectedRows()
