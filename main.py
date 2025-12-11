@@ -8,7 +8,8 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from PySide6.QtCore import QTimer, Qt, Signal, QThread
+from PySide6.QtCore import QTimer, Qt, Signal, QThread, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -34,6 +35,7 @@ class Ticket:
     subject: str
     status: str
     updated_on: str
+    url: str = ""
     done: bool = False
     done_at: str | None = None
 
@@ -43,9 +45,11 @@ class Ticket:
         updated = (entry.findtext("atom:updated", default="", namespaces=ATOM_NS) or "").strip()
         category = entry.find("atom:category", ATOM_NS)
         status = category.get("term") if category is not None and category.get("term") else "unknown"
+        link = entry.find("atom:link", ATOM_NS)
+        url = link.get("href") if link is not None and link.get("href") else ""
         ticket_id = extract_ticket_id(entry, raw_title)
         subject = extract_subject(raw_title)
-        return cls(ticket_id=ticket_id, subject=subject, status=status, updated_on=updated)
+        return cls(ticket_id=ticket_id, subject=subject, status=status, updated_on=updated, url=url)
 
 
 def extract_ticket_id(entry: ET.Element, title_text: str) -> str:
@@ -102,6 +106,7 @@ def load_csv() -> dict[str, Ticket]:
                 subject=row["subject"],
                 status=row["status"],
                 updated_on=row["updated_on"],
+                url=row.get("url", ""),
                 done=row.get("done", "False") == "True",
                 done_at=row.get("done_at") or None,
             )
@@ -109,7 +114,7 @@ def load_csv() -> dict[str, Ticket]:
 
 
 def save_csv(tickets: dict[str, Ticket]) -> None:
-    fieldnames = ["ticket_id", "subject", "status", "updated_on", "done", "done_at"]
+    fieldnames = ["ticket_id", "subject", "status", "updated_on", "url", "done", "done_at"]
     with open(DATA_PATH, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -120,6 +125,7 @@ def save_csv(tickets: dict[str, Ticket]) -> None:
                     "subject": t.subject,
                     "status": t.status,
                     "updated_on": t.updated_on,
+                    "url": t.url,
                     "done": str(t.done),
                     "done_at": t.done_at or "",
                 }
@@ -184,8 +190,8 @@ class MainWindow(QMainWindow):
         self.save_btn = QPushButton("手動保存")
         self.save_btn.clicked.connect(self.save_current)
 
-        self.table = QTableWidget(0, 6)
-        self.table.setHorizontalHeaderLabels(["ID", "件名", "ステータス", "更新日", "済", "済日時"])
+        self.table = QTableWidget(0, 8)
+        self.table.setHorizontalHeaderLabels(["ID", "件名", "ステータス", "更新日", "済", "済日時", "済ボタン", "開く"])
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.MultiSelection)
         self.table.horizontalHeader().setStretchLastSection(True)
@@ -287,8 +293,8 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"同期完了（{len(fetched)}件）")
 
     def on_fetch_http_error(self, msg: str) -> None:
-        self.status_label.setText("HTTPエラー")
-        QMessageBox.critical(self, "HTTPエラー", msg)
+            self.status_label.setText("HTTPエラー")
+            QMessageBox.critical(self, "HTTPエラー", msg)
 
     def on_fetch_failure(self, msg: str) -> None:
         self.status_label.setText("同期失敗")
@@ -311,6 +317,7 @@ class MainWindow(QMainWindow):
                     subject=t.subject,
                     status=t.status,
                     updated_on=t.updated_on,
+                    url=t.url or existing[t.ticket_id].url,
                     done=done,
                     done_at=done_at,
                 )
@@ -333,11 +340,18 @@ class MainWindow(QMainWindow):
             ]
             for col, val in enumerate(values):
                 item = QTableWidgetItem(val)
-                if col == 0:
-                    item.setTextAlignment(Qt.AlignCenter)
-                if col == 4:
+                if col in (0, 4):
                     item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(row, col, item)
+
+            done_btn = QPushButton("済切替")
+            done_btn.clicked.connect(lambda _, tid=t.ticket_id: self.toggle_done_one(tid))
+            self.table.setCellWidget(row, 6, done_btn)
+
+            open_btn = QPushButton("開く")
+            open_btn.clicked.connect(lambda _, tid=t.ticket_id: self.open_ticket(tid))
+            self.table.setCellWidget(row, 7, open_btn)
+
         self.table.resizeColumnsToContents()
 
     def toggle_selected(self) -> None:
@@ -358,6 +372,26 @@ class MainWindow(QMainWindow):
         if changed:
             save_csv(self.tickets)
             self.refresh_table()
+
+    def toggle_done_one(self, ticket_id: str) -> None:
+        t = self.tickets.get(ticket_id)
+        if not t:
+            return
+        now = datetime.now().isoformat(timespec="seconds")
+        t.done = not t.done
+        t.done_at = now if t.done else None
+        save_csv(self.tickets)
+        self.refresh_table()
+
+    def open_ticket(self, ticket_id: str) -> None:
+        t = self.tickets.get(ticket_id)
+        if not t:
+            QMessageBox.information(self, "未選択", "チケットが見つかりません。")
+            return
+        if not t.url:
+            QMessageBox.information(self, "URLなし", "チケットのURLがありません。")
+            return
+        QDesktopServices.openUrl(QUrl(t.url))
 
     def save_current(self) -> None:
         save_csv(self.tickets)
