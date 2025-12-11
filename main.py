@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QHeaderView,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -196,7 +197,7 @@ class MainWindow(QMainWindow):
         self.table.setSelectionMode(QTableWidget.MultiSelection)
         header = self.table.horizontalHeader()
         header.setStretchLastSection(False)
-        header.setSectionResizeMode(header.Fixed)
+        header.setSectionResizeMode(QHeaderView.Fixed)
         # 固定幅を設定（必要に応じて調整してください）
         fixed_widths = [80, 320, 120, 160, 50, 160, 80, 80]
         for idx, w in enumerate(fixed_widths):
