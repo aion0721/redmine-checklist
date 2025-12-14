@@ -12,8 +12,8 @@ class Ticket:
     status: str
     updated_on: str
     url: str = ""
+    feed_id: str = ""
     feed_title: str = ""
-    feed_url: str = ""
     feed_search: str = ""
     search_hit: bool = False
     done: bool = False
@@ -21,7 +21,7 @@ class Ticket:
 
     @classmethod
     def from_entry(
-        cls, entry: ET.Element, feed_title: str, feed_url: str, feed_search: str, search_hit: bool
+        cls, entry: ET.Element, feed_id: str, feed_title: str, feed_search: str, search_hit: bool
     ) -> "Ticket":
         raw_title = (entry.findtext("atom:title", default="", namespaces=ATOM_NS) or "").strip()
         updated = (entry.findtext("atom:updated", default="", namespaces=ATOM_NS) or "").strip()
@@ -37,8 +37,8 @@ class Ticket:
             status=status,
             updated_on=updated,
             url=url,
+            feed_id=feed_id,
             feed_title=feed_title,
-            feed_url=feed_url,
             feed_search=feed_search,
             search_hit=search_hit,
         )

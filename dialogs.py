@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from config_manager import normalize_feeds, save_config
+from config_manager import normalize_feeds, save_config, generate_feed_id
 
 
 class FeedEditDialog(QDialog):
@@ -70,8 +70,8 @@ class ConfigDialog(QDialog):
         self.refresh_spin.setRange(1, 1440)
         self.refresh_spin.setValue(int(cfg.get("refresh_minutes", 30)))
 
-        self.feed_table = QTableWidget(0, 3)
-        self.feed_table.setHorizontalHeaderLabels(["タイトル", "URL", "検索文字列"])
+        self.feed_table = QTableWidget(0, 4)
+        self.feed_table.setHorizontalHeaderLabels(["ID", "タイトル", "URL", "検索文字列"])
         self.feed_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.feed_table.setSelectionMode(QTableWidget.SingleSelection)
         header = self.feed_table.horizontalHeader()
@@ -114,15 +114,17 @@ class ConfigDialog(QDialog):
     def load_feeds_into_table(self) -> None:
         self.feed_table.setRowCount(len(self.feeds))
         for row, f in enumerate(self.feeds):
-            self.feed_table.setItem(row, 0, QTableWidgetItem(f.get("title", "")))
-            self.feed_table.setItem(row, 1, QTableWidgetItem(f.get("url", "")))
-            self.feed_table.setItem(row, 2, QTableWidgetItem(f.get("search", "")))
+            self.feed_table.setItem(row, 0, QTableWidgetItem(f.get("id", "")))
+            self.feed_table.setItem(row, 1, QTableWidgetItem(f.get("title", "")))
+            self.feed_table.setItem(row, 2, QTableWidgetItem(f.get("url", "")))
+            self.feed_table.setItem(row, 3, QTableWidgetItem(f.get("search", "")))
         self.feed_table.resizeColumnsToContents()
 
     def add_feed(self) -> None:
         dlg = FeedEditDialog(self)
         res = dlg.get_result()
         if res:
+            res["id"] = generate_feed_id()
             self.feeds.append(res)
             self.load_feeds_into_table()
 
@@ -135,6 +137,7 @@ class ConfigDialog(QDialog):
         dlg = FeedEditDialog(self, self.feeds[row])
         res = dlg.get_result()
         if res:
+            res["id"] = self.feeds[row].get("id") or generate_feed_id()
             self.feeds[row] = res
             self.load_feeds_into_table()
 

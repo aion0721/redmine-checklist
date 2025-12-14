@@ -3,13 +3,15 @@
   "refresh_minutes": 1,
   "feeds": [
     {
+      "id": "191f6d45f97147128c8c2365e7bb9ffa",
       "title": "sample1",
       "url": "http://localhost:3000/projects/sample-1/issues.atom?key=b5ce34412c0c6664bc03e40712860328957f18ca",
       "search": "うえ"
     },
     {
-      "title": "sample2",
-      "url": "http://localhost:3000/projects/sample-1/issues.atom?c%5B%5D=tracker&c%5B%5D=status&c%5B%5D=priority&c%5B%5D=subject&c%5B%5D=assigned_to&c%5B%5D=updated_on&f%5B%5D=status_id&f%5B%5D=&group_by=&key=19b161f2c929ffa3cdd5e8afeee9b8a473a61b58&op%5Bstatus_id%5D=%3D&set_filter=1&sort=id%3Adesc&t%5B%5D=&v%5Bstatus_id%5D%5B%5D=2",
+      "id": "919925b16c0d42f984dbc91bcf4c87f4",
+      "title": "Project2",
+      "url": "http://localhost:3000/projects/sample2/issues.atom?key=19b161f2c929ffa3cdd5e8afeee9b8a473a61b58",
       "search": ""
     }
   ]

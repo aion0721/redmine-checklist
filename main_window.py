@@ -6,6 +6,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QDialog,
     QHeaderView,
     QHBoxLayout,
     QLabel,
@@ -192,12 +193,13 @@ class MainWindow(QMainWindow):
             total_new = 0
             total_updated = 0
             for feed in feeds:
+                f_id = feed.get("id", "")
                 f_title = feed.get("title", "feed")
                 f_url = feed.get("url") or feed.get("feed_url")
                 f_search = feed.get("search", "")
                 if not f_url:
                     continue
-                fetched = fetch_feed(f_url, api_key, f_title, f_search)
+                fetched = fetch_feed(f_url, api_key, f_id, f_title, f_search)
                 total_fetched += len(fetched)
                 new_cnt, updated_cnt = self.merge_tickets(fetched)
                 total_new += new_cnt
@@ -232,8 +234,8 @@ class MainWindow(QMainWindow):
                     status=t.status,
                     updated_on=t.updated_on,
                     url=t.url or existing[t.ticket_id].url,
+                    feed_id=t.feed_id or existing[t.ticket_id].feed_id,
                     feed_title=t.feed_title or existing[t.ticket_id].feed_title,
-                    feed_url=t.feed_url or existing[t.ticket_id].feed_url,
                     feed_search=t.feed_search or existing[t.ticket_id].feed_search,
                     search_hit=t.search_hit,
                     done=done,
@@ -249,11 +251,11 @@ class MainWindow(QMainWindow):
 
     def refresh_table(self) -> None:
         self.tree.clear()
-        items_all = sorted(self.tickets.values(), key=lambda t: (t.feed_title, t.ticket_id))
+        items_all = sorted(self.tickets.values(), key=lambda t: (t.feed_id, t.ticket_id))
         # 未済件数はフィルタに関係なくカウント
         pending_counts: dict[str, int] = {}
         for t in items_all:
-            key = t.feed_title or "feed"
+            key = t.feed_id or "feed"
             if not t.done:
                 pending_counts[key] = pending_counts.get(key, 0) + 1
 
@@ -262,14 +264,17 @@ class MainWindow(QMainWindow):
         # フィルタ後の表示対象をグループ化
         display_groups: dict[str, list[Ticket]] = {}
         for t in display_items:
-            display_groups.setdefault(t.feed_title or "feed", []).append(t)
+            display_groups.setdefault(t.feed_id or "feed", []).append(t)
 
         # すべてのフィード（未済0件でも表示）
-        feed_titles = sorted({t.feed_title or "feed" for t in items_all})
-        for feed_title in feed_titles:
-            tickets = display_groups.get(feed_title, [])
-            pending = pending_counts.get(feed_title, 0)
-            parent_label = f"{feed_title} (未済{pending}件)"
+        feed_ids = sorted({t.feed_id or "feed" for t in items_all})
+        # feed_id -> title map
+        feed_titles_map = {t.feed_id or "feed": t.feed_title or "feed" for t in items_all}
+        for feed_id in feed_ids:
+            tickets = display_groups.get(feed_id, [])
+            pending = pending_counts.get(feed_id, 0)
+            title = feed_titles_map.get(feed_id, "feed")
+            parent_label = f"{title} (未済{pending}件)"
             parent = QTreeWidgetItem(self.tree, [parent_label])
             parent.setFirstColumnSpanned(True)
             parent.setExpanded(True)
