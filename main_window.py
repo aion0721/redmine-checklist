@@ -249,16 +249,28 @@ class MainWindow(QMainWindow):
 
     def refresh_table(self) -> None:
         self.tree.clear()
-        items = sorted(self.tickets.values(), key=lambda t: (t.feed_title, t.ticket_id))
-        display_items = [t for t in items if not (self.only_open_chk.isChecked() and t.done)]
+        items_all = sorted(self.tickets.values(), key=lambda t: (t.feed_title, t.ticket_id))
+        # 未済件数はフィルタに関係なくカウント
+        pending_counts: dict[str, int] = {}
+        for t in items_all:
+            key = t.feed_title or "feed"
+            if not t.done:
+                pending_counts[key] = pending_counts.get(key, 0) + 1
 
-        # グループ化（feed_title単位）
-        groups: dict[str, list[Ticket]] = {}
+        display_items = [t for t in items_all if not (self.only_open_chk.isChecked() and t.done)]
+
+        # フィルタ後の表示対象をグループ化
+        display_groups: dict[str, list[Ticket]] = {}
         for t in display_items:
-            groups.setdefault(t.feed_title or "feed", []).append(t)
+            display_groups.setdefault(t.feed_title or "feed", []).append(t)
 
-        for feed_title, tickets in groups.items():
-            parent = QTreeWidgetItem(self.tree, [feed_title])
+        # すべてのフィード（未済0件でも表示）
+        feed_titles = sorted({t.feed_title or "feed" for t in items_all})
+        for feed_title in feed_titles:
+            tickets = display_groups.get(feed_title, [])
+            pending = pending_counts.get(feed_title, 0)
+            parent_label = f"{feed_title} (未済{pending}件)"
+            parent = QTreeWidgetItem(self.tree, [parent_label])
             parent.setFirstColumnSpanned(True)
             parent.setExpanded(True)
             for t in tickets:
