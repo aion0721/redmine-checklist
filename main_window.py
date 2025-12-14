@@ -1,8 +1,9 @@
 import urllib.error
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from PySide6.QtCore import QTimer, Qt, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -32,7 +33,7 @@ from ui_columns import COLUMNS
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Redmine チケット済管理 (PySide6)")
+        self.setWindowTitle("Redmine チケット済管理")
 
         self.config = load_config()
         self.tickets: dict[str, Ticket] = load_csv()
@@ -48,6 +49,9 @@ class MainWindow(QMainWindow):
         self.countdown_timer.timeout.connect(self.update_remaining)
 
         self.tray: QSystemTrayIcon | None = None
+        self.logo_icon = self._load_logo_icon()
+        if self.logo_icon:
+            self.setWindowIcon(self.logo_icon)
 
         self.status_label = QLabel("停止中")
         self.remaining_label = QLabel("-")
@@ -128,8 +132,9 @@ class MainWindow(QMainWindow):
             self.tray = None
             return
         style = QApplication.style()
-        icon = style.standardIcon(QStyle.SP_DesktopIcon)
+        icon = self.logo_icon if self.logo_icon and not self.logo_icon.isNull() else style.standardIcon(QStyle.SP_DesktopIcon)
         self.tray = QSystemTrayIcon(icon, self)
+        self.tray.setIcon(icon)
         self.tray.setToolTip("Redmine チケット済管理")
         self.tray.show()
 
@@ -382,3 +387,16 @@ class MainWindow(QMainWindow):
         show_done_at = self.show_done_at_chk.isChecked()
         self.tree.setColumnHidden(5, not show_updated)
         self.tree.setColumnHidden(6, not show_done_at)
+
+    def _load_logo_icon(self) -> QIcon | None:
+        # 複数パスを探索（PyInstaller後でも拾いやすくする）
+        candidates = [
+            Path(__file__).resolve().parent / "logo.png",
+            Path.cwd() / "logo.png",
+        ]
+        for path in candidates:
+            if path.exists():
+                icon = QIcon(str(path))
+                if not icon.isNull():
+                    return icon
+        return None
