@@ -9,16 +9,20 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from PySide6.QtCore import QTimer, Qt, QUrl
-from PySide6.QtGui import QDesktopServices, QIcon, QGuiApplication
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QDialog,
+    QFormLayout,
+    QHeaderView,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
     QPushButton,
-    QHeaderView,
+    QSpinBox,
     QStyle,
     QSystemTrayIcon,
     QTableWidget,
@@ -121,6 +125,152 @@ def normalize_feeds(cfg: dict) -> list[dict]:
     if cfg.get("feed_url"):
         return [{"title": "default", "url": cfg["feed_url"], "search": ""}]
     return []
+
+
+def save_config(cfg: dict) -> None:
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2, ensure_ascii=False)
+
+
+class FeedEditDialog(QDialog):
+    def __init__(self, parent=None, feed: dict | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("フィード編集")
+        self.resize(420, 180)
+        self.feed: dict | None = None
+
+        self.title_edit = QLineEdit(feed.get("title", "") if feed else "")
+        self.url_edit = QLineEdit(feed.get("url", "") if feed else "")
+        self.search_edit = QLineEdit(feed.get("search", "") if feed else "")
+
+        form = QFormLayout()
+        form.addRow("タイトル", self.title_edit)
+        form.addRow("URL", self.url_edit)
+        form.addRow("検索文字列", self.search_edit)
+
+        btn_box = QHBoxLayout()
+        ok_btn = QPushButton("OK")
+        cancel_btn = QPushButton("キャンセル")
+        ok_btn.clicked.connect(self.accept)
+        cancel_btn.clicked.connect(self.reject)
+        btn_box.addWidget(ok_btn)
+        btn_box.addWidget(cancel_btn)
+        btn_box.addStretch(1)
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addLayout(btn_box)
+
+    def get_result(self) -> dict | None:
+        if self.exec() == QDialog.Accepted:
+            title = self.title_edit.text().strip() or "feed"
+            url = self.url_edit.text().strip()
+            search = self.search_edit.text().strip()
+            if not url:
+                QMessageBox.warning(self, "URL未入力", "URLを入力してください。")
+                return None
+            return {"title": title, "url": url, "search": search}
+        return None
+
+
+class ConfigDialog(QDialog):
+    def __init__(self, cfg: dict, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("設定（config.json）")
+        self.resize(700, 420)
+        self.cfg = cfg
+        self.feeds: list[dict] = normalize_feeds(cfg)
+
+        self.api_edit = QLineEdit(cfg.get("api_key", ""))
+        self.refresh_spin = QSpinBox()
+        self.refresh_spin.setRange(1, 1440)
+        self.refresh_spin.setValue(int(cfg.get("refresh_minutes", 30)))
+
+        self.feed_table = QTableWidget(0, 3)
+        self.feed_table.setHorizontalHeaderLabels(["タイトル", "URL", "検索文字列"])
+        self.feed_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.feed_table.setSelectionMode(QTableWidget.SingleSelection)
+        header = self.feed_table.horizontalHeader()
+        header.setStretchLastSection(True)
+
+        self.load_feeds_into_table()
+
+        add_btn = QPushButton("追加")
+        add_btn.clicked.connect(self.add_feed)
+        edit_btn = QPushButton("編集")
+        edit_btn.clicked.connect(self.edit_feed)
+        del_btn = QPushButton("削除")
+        del_btn.clicked.connect(self.delete_feed)
+
+        form = QFormLayout()
+        form.addRow("APIキー", self.api_edit)
+        form.addRow("同期間隔(分)", self.refresh_spin)
+
+        btns = QHBoxLayout()
+        btns.addWidget(add_btn)
+        btns.addWidget(edit_btn)
+        btns.addWidget(del_btn)
+        btns.addStretch(1)
+
+        bottom = QHBoxLayout()
+        save_btn = QPushButton("保存")
+        close_btn = QPushButton("閉じる")
+        save_btn.clicked.connect(self.save_and_close)
+        close_btn.clicked.connect(self.reject)
+        bottom.addStretch(1)
+        bottom.addWidget(save_btn)
+        bottom.addWidget(close_btn)
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addWidget(self.feed_table)
+        layout.addLayout(btns)
+        layout.addLayout(bottom)
+
+    def load_feeds_into_table(self) -> None:
+        self.feed_table.setRowCount(len(self.feeds))
+        for row, f in enumerate(self.feeds):
+            self.feed_table.setItem(row, 0, QTableWidgetItem(f.get("title", "")))
+            self.feed_table.setItem(row, 1, QTableWidgetItem(f.get("url", "")))
+            self.feed_table.setItem(row, 2, QTableWidgetItem(f.get("search", "")))
+        self.feed_table.resizeColumnsToContents()
+
+    def add_feed(self) -> None:
+        dlg = FeedEditDialog(self)
+        res = dlg.get_result()
+        if res:
+            self.feeds.append(res)
+            self.load_feeds_into_table()
+
+    def edit_feed(self) -> None:
+        indexes = self.feed_table.selectionModel().selectedRows()
+        if not indexes:
+            QMessageBox.information(self, "未選択", "編集するフィードを選択してください。")
+            return
+        row = indexes[0].row()
+        dlg = FeedEditDialog(self, self.feeds[row])
+        res = dlg.get_result()
+        if res:
+            self.feeds[row] = res
+            self.load_feeds_into_table()
+
+    def delete_feed(self) -> None:
+        indexes = self.feed_table.selectionModel().selectedRows()
+        if not indexes:
+            QMessageBox.information(self, "未選択", "削除するフィードを選択してください。")
+            return
+        row = indexes[0].row()
+        del self.feeds[row]
+        self.load_feeds_into_table()
+
+    def save_and_close(self) -> None:
+        new_cfg = {
+            "api_key": self.api_edit.text().strip(),
+            "refresh_minutes": int(self.refresh_spin.value()),
+            "feeds": self.feeds,
+        }
+        save_config(new_cfg)
+        self.accept()
 
 
 def fetch_feed(feed_url: str, api_key: str, feed_title: str, feed_search: str, timeout: int = 15) -> list[Ticket]:
@@ -228,6 +378,9 @@ class MainWindow(QMainWindow):
         self.reload_btn = QPushButton("再読込")
         self.reload_btn.clicked.connect(self.reload_config)
 
+        self.config_btn = QPushButton("設定")
+        self.config_btn.clicked.connect(self.open_config_dialog)
+
         self.toggle_done_btn = QPushButton("選択を済/未済切替")
         self.toggle_done_btn.clicked.connect(self.toggle_selected)
 
@@ -262,6 +415,7 @@ class MainWindow(QMainWindow):
         top.addWidget(self.start_btn)
         top.addWidget(self.sync_btn)
         top.addWidget(self.reload_btn)
+        top.addWidget(self.config_btn)
         top.addWidget(self.only_open_chk)
         top.addWidget(self.toggle_done_btn)
         top.addWidget(self.save_btn)
@@ -290,6 +444,12 @@ class MainWindow(QMainWindow):
     def reload_config(self) -> None:
         self.config = load_config()
         QMessageBox.information(self, "設定再読込", "config.json を再読込しました。")
+
+    def open_config_dialog(self) -> None:
+        dlg = ConfigDialog(self.config, self)
+        if dlg.exec() == QDialog.Accepted:
+            self.config = load_config()
+            QMessageBox.information(self, "設定保存", "config.json を保存しました。")
 
     def toggle_sync(self) -> None:
         if self.sync_running:
