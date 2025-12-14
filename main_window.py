@@ -14,8 +14,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QStyle,
     QSystemTrayIcon,
-    QTableWidget,
-    QTableWidgetItem,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -70,19 +70,19 @@ class MainWindow(QMainWindow):
         self.save_btn = QPushButton("手動保存")
         self.save_btn.clicked.connect(self.save_current)
 
-        self.table = QTableWidget(0, 10)
-        self.table.setHorizontalHeaderLabels(
-            ["ID", "件名", "フィード", "ステータス", "更新日", "検索文字列有無", "済", "済日時", "済ボタン", "開く"]
+        self.tree = QTreeWidget()
+        self.tree.setColumnCount(8)
+        self.tree.setHeaderLabels(
+            ["ID", "件名", "更新日", "検索文字列有無", "済", "済日時", "済ボタン", "開く"]
         )
-        self.table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.table.setSelectionMode(QTableWidget.MultiSelection)
-        header = self.table.horizontalHeader()
+        header = self.tree.header()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(QHeaderView.Fixed)
-        fixed_widths = [80, 280, 140, 120, 160, 90, 50, 160, 80, 80]
+        fixed_widths = [80, 340, 180, 100, 50, 160, 80, 80]
         for idx, w in enumerate(fixed_widths):
             header.resizeSection(idx, w)
-        self.table.verticalHeader().setVisible(False)
+        self.tree.setSelectionMode(QTreeWidget.MultiSelection)
+        self.tree.setSelectionBehavior(QTreeWidget.SelectRows)
 
         self.build_ui()
         self.refresh_table()
@@ -111,7 +111,7 @@ class MainWindow(QMainWindow):
         info.addStretch(1)
         layout.addLayout(info)
 
-        layout.addWidget(self.table)
+        layout.addWidget(self.tree)
 
     def init_tray(self) -> None:
         if not QSystemTrayIcon.isSystemTrayAvailable():
@@ -248,52 +248,44 @@ class MainWindow(QMainWindow):
         return new_cnt, updated_cnt
 
     def refresh_table(self) -> None:
-        items = sorted(self.tickets.values(), key=lambda t: t.ticket_id)
+        self.tree.clear()
+        items = sorted(self.tickets.values(), key=lambda t: (t.feed_title, t.ticket_id))
         display_items = [t for t in items if not (self.only_open_chk.isChecked() and t.done)]
-        self.table.setRowCount(len(display_items))
-        for row, t in enumerate(display_items):
-            values = [
-                t.ticket_id,
-                t.subject,
-                t.feed_title,
-                t.status,
-                t.updated_on,
-                "有" if t.search_hit else "",
-                "済" if t.done else "",
-                t.done_at or "",
-            ]
-            for col, val in enumerate(values):
-                item = QTableWidgetItem(val)
-                if col in (0, 5, 6):
-                    item.setTextAlignment(Qt.AlignCenter)
-                self.table.setItem(row, col, item)
 
-            done_btn = QPushButton("済切替")
-            done_btn.clicked.connect(lambda _, tid=t.ticket_id: self.toggle_done_one(tid))
-            self.table.setCellWidget(row, 8, done_btn)
+        # グループ化（feed_title単位）
+        groups: dict[str, list[Ticket]] = {}
+        for t in display_items:
+            groups.setdefault(t.feed_title or "feed", []).append(t)
 
-            open_btn = QPushButton("開く")
-            open_btn.clicked.connect(lambda _, tid=t.ticket_id: self.open_ticket(tid))
-            self.table.setCellWidget(row, 9, open_btn)
+        for feed_title, tickets in groups.items():
+            parent = QTreeWidgetItem(self.tree, [feed_title])
+            parent.setFirstColumnSpanned(True)
+            parent.setExpanded(True)
+            for t in tickets:
+                child = QTreeWidgetItem(
+                    [
+                        t.ticket_id,
+                        t.subject,
+                        t.updated_on,
+                        "有" if t.search_hit else "",
+                        "済" if t.done else "",
+                        t.done_at or "",
+                        "",
+                        "",
+                    ]
+                )
+                child.setData(0, Qt.UserRole, t.ticket_id)
+                for col in (0, 3, 4):
+                    child.setTextAlignment(col, Qt.AlignCenter)
+                parent.addChild(child)
 
-    def toggle_selected(self) -> None:
-        selected = self.table.selectionModel().selectedRows()
-        if not selected:
-            QMessageBox.information(self, "未選択", "切り替えるチケットを選択してください。")
-            return
-        now = datetime.now().isoformat(timespec="seconds")
-        changed = 0
-        for model_index in selected:
-            ticket_id = self.table.item(model_index.row(), 0).text()
-            t = self.tickets.get(ticket_id)
-            if not t:
-                continue
-            t.done = not t.done
-            t.done_at = now if t.done else None
-            changed += 1
-        if changed:
-            save_csv(self.tickets)
-            self.refresh_table()
+                done_btn = QPushButton("済切替")
+                done_btn.clicked.connect(lambda _, tid=t.ticket_id: self.toggle_done_one(tid))
+                self.tree.setItemWidget(child, 6, done_btn)
+
+                open_btn = QPushButton("開く")
+                open_btn.clicked.connect(lambda _, tid=t.ticket_id: self.open_ticket(tid))
+                self.tree.setItemWidget(child, 7, open_btn)
 
     def toggle_done_one(self, ticket_id: str) -> None:
         t = self.tickets.get(ticket_id)
@@ -304,6 +296,28 @@ class MainWindow(QMainWindow):
         t.done_at = now if t.done else None
         save_csv(self.tickets)
         self.refresh_table()
+
+    def toggle_selected(self) -> None:
+        selected = self.tree.selectedItems()
+        if not selected:
+            QMessageBox.information(self, "未選択", "切り替えるチケットを選択してください。")
+            return
+        now = datetime.now().isoformat(timespec="seconds")
+        changed = 0
+        for item in selected:
+            # 親（フィード行）には UserRole のIDを持たせていない
+            ticket_id = item.data(0, Qt.UserRole)
+            if not ticket_id:
+                continue
+            t = self.tickets.get(ticket_id)
+            if not t:
+                continue
+            t.done = not t.done
+            t.done_at = now if t.done else None
+            changed += 1
+        if changed:
+            save_csv(self.tickets)
+            self.refresh_table()
 
     def open_ticket(self, ticket_id: str) -> None:
         t = self.tickets.get(ticket_id)
