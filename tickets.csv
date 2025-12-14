@@ -1,6 +1,6 @@
 ticket_id,subject,status,updated_on,url,feed_id,feed_title,feed_search,search_hit,done,done_at
-1,SampleTickert1,unknown,2025-12-14T04:56:38Z,http://localhost:3000/issues/1,191f6d45f97147128c8c2365e7bb9ffa,sample1,うえ,False,True,2025-12-14T15:25:08
-3,新規作成,unknown,2025-12-14T05:09:46Z,http://localhost:3000/issues/3,191f6d45f97147128c8c2365e7bb9ffa,sample1,うえ,False,True,2025-12-14T15:24:53
+1,SampleTickert1,unknown,2025-12-14T04:56:38Z,http://localhost:3000/issues/1,191f6d45f97147128c8c2365e7bb9ffa,sample1,うえ,False,False,
+3,新規作成,unknown,2025-12-14T05:09:46Z,http://localhost:3000/issues/3,191f6d45f97147128c8c2365e7bb9ffa,sample1,うえ,False,True,2025-12-14T15:46:54
 4,Sample3,unknown,2025-12-14T05:39:57Z,http://localhost:3000/issues/4,191f6d45f97147128c8c2365e7bb9ffa,sample1,うえ,False,True,2025-12-14T15:25:08
 5,SearchSample,unknown,2025-12-14T05:56:16Z,http://localhost:3000/issues/5,191f6d45f97147128c8c2365e7bb9ffa,sample1,うえ,True,True,2025-12-14T15:24:47
 2,Sample2,unknown,2025-12-14T04:58:10Z,http://localhost:3000/issues/2,919925b16c0d42f984dbc91bcf4c87f4,Project2,,False,False,

@@ -53,33 +53,41 @@ class MainWindow(QMainWindow):
         self.only_open_chk = QCheckBox("未済のみ表示")
         self.only_open_chk.stateChanged.connect(self.refresh_table)
 
+        self.show_updated_chk = QCheckBox("更新日を表示")
+        self.show_updated_chk.setChecked(False)
+        self.show_updated_chk.stateChanged.connect(self.update_column_visibility)
+
+        self.show_done_at_chk = QCheckBox("済日時を表示")
+        self.show_done_at_chk.setChecked(False)
+        self.show_done_at_chk.stateChanged.connect(self.update_column_visibility)
+
         self.start_btn = QPushButton("同期開始")
         self.start_btn.clicked.connect(self.toggle_sync)
 
         self.sync_btn = QPushButton("すぐ同期")
         self.sync_btn.clicked.connect(self.sync_now)
 
-        self.reload_btn = QPushButton("再読込")
-        self.reload_btn.clicked.connect(self.reload_config)
-
         self.config_btn = QPushButton("設定")
         self.config_btn.clicked.connect(self.open_config_dialog)
 
-        self.toggle_done_btn = QPushButton("選択を済/未済切替")
+        self.reload_btn = QPushButton("設定再読込")
+        self.reload_btn.clicked.connect(self.reload_config)
+
+        self.toggle_done_btn = QPushButton("選択一括済/未済切替")
         self.toggle_done_btn.clicked.connect(self.toggle_selected)
 
-        self.save_btn = QPushButton("手動保存")
+        self.save_btn = QPushButton("手動データ保存")
         self.save_btn.clicked.connect(self.save_current)
 
         self.tree = QTreeWidget()
         self.tree.setColumnCount(8)
         self.tree.setHeaderLabels(
-            ["ID", "件名", "更新日", "検索文字列有無", "済", "済日時", "済ボタン", "開く"]
+            ["ID", "開く", "済", "済ボタン", "検索文字列", "更新日", "済日時", "件名"]
         )
         header = self.tree.header()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(QHeaderView.Fixed)
-        fixed_widths = [80, 340, 180, 100, 50, 160, 80, 80]
+        fixed_widths = [80, 50, 50, 80, 100, 180]
         for idx, w in enumerate(fixed_widths):
             header.resizeSection(idx, w)
         self.tree.setSelectionMode(QTreeWidget.MultiSelection)
@@ -88,6 +96,7 @@ class MainWindow(QMainWindow):
         self.build_ui()
         self.refresh_table()
         self.init_tray()
+        self.update_column_visibility()
 
     def build_ui(self) -> None:
         root = QWidget()
@@ -100,6 +109,8 @@ class MainWindow(QMainWindow):
         top.addWidget(self.reload_btn)
         top.addWidget(self.config_btn)
         top.addWidget(self.only_open_chk)
+        top.addWidget(self.show_updated_chk)
+        top.addWidget(self.show_done_at_chk)
         top.addWidget(self.toggle_done_btn)
         top.addWidget(self.save_btn)
         top.addStretch(1)
@@ -282,27 +293,31 @@ class MainWindow(QMainWindow):
                 child = QTreeWidgetItem(
                     [
                         t.ticket_id,
-                        t.subject,
-                        t.updated_on,
-                        "有" if t.search_hit else "",
+                        "",
                         "済" if t.done else "",
+                        "",
+                        "有" if t.search_hit else "",
+                        t.updated_on,
                         t.done_at or "",
+                        t.subject,
                         "",
                         "",
                     ]
                 )
                 child.setData(0, Qt.UserRole, t.ticket_id)
-                for col in (0, 3, 4):
+                for col in (0, 2, 4):
                     child.setTextAlignment(col, Qt.AlignCenter)
                 parent.addChild(child)
 
-                done_btn = QPushButton("済切替")
-                done_btn.clicked.connect(lambda _, tid=t.ticket_id: self.toggle_done_one(tid))
-                self.tree.setItemWidget(child, 6, done_btn)
-
                 open_btn = QPushButton("開く")
                 open_btn.clicked.connect(lambda _, tid=t.ticket_id: self.open_ticket(tid))
-                self.tree.setItemWidget(child, 7, open_btn)
+                self.tree.setItemWidget(child, 1, open_btn)
+
+                done_btn = QPushButton("済切替")
+                done_btn.clicked.connect(lambda _, tid=t.ticket_id: self.toggle_done_one(tid))
+                self.tree.setItemWidget(child, 3, done_btn)
+
+        self.update_column_visibility()
 
     def toggle_done_one(self, ticket_id: str) -> None:
         t = self.tickets.get(ticket_id)
@@ -360,3 +375,10 @@ class MainWindow(QMainWindow):
             lines.append(f"更新 {updated_cnt} 件")
         body = " / ".join(lines) if lines else "更新があります"
         self.tray.showMessage("Redmine 更新通知", body, QSystemTrayIcon.Information, 5000)
+
+    def update_column_visibility(self) -> None:
+        # カラムインデックス: 0 ID, 1 開く, 2 済, 3 済ボタン, 4 検索文字列有無, 5 更新日, 6 済日時, 7 件名
+        show_updated = self.show_updated_chk.isChecked()
+        show_done_at = self.show_done_at_chk.isChecked()
+        self.tree.setColumnHidden(5, not show_updated)
+        self.tree.setColumnHidden(6, not show_done_at)
