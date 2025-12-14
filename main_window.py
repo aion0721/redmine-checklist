@@ -26,6 +26,7 @@ from dialogs import ConfigDialog
 from feed_client import fetch_feed
 from models import Ticket
 from storage import load_csv, save_csv
+from ui_columns import COLUMNS
 
 
 class MainWindow(QMainWindow):
@@ -80,15 +81,12 @@ class MainWindow(QMainWindow):
         self.save_btn.clicked.connect(self.save_current)
 
         self.tree = QTreeWidget()
-        self.tree.setColumnCount(8)
-        self.tree.setHeaderLabels(
-            ["ID", "開く", "済", "済ボタン", "検索文字列", "更新日", "済日時", "件名"]
-        )
+        self.tree.setColumnCount(len(COLUMNS.labels))
+        self.tree.setHeaderLabels(list(COLUMNS.labels))
         header = self.tree.header()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(QHeaderView.Fixed)
-        fixed_widths = [80, 50, 50, 80, 100, 180]
-        for idx, w in enumerate(fixed_widths):
+        for idx, w in enumerate(COLUMNS.widths):
             header.resizeSection(idx, w)
         self.tree.setSelectionMode(QTreeWidget.MultiSelection)
         self.tree.setSelectionBehavior(QTreeWidget.SelectRows)
@@ -200,21 +198,7 @@ class MainWindow(QMainWindow):
             self.status_label.setText("同期失敗")
             return
         try:
-            total_fetched = 0
-            total_new = 0
-            total_updated = 0
-            for feed in feeds:
-                f_id = feed.get("id", "")
-                f_title = feed.get("title", "feed")
-                f_url = feed.get("url") or feed.get("feed_url")
-                f_search = feed.get("search", "")
-                if not f_url:
-                    continue
-                fetched = fetch_feed(f_url, api_key, f_id, f_title, f_search)
-                total_fetched += len(fetched)
-                new_cnt, updated_cnt = self.merge_tickets(fetched)
-                total_new += new_cnt
-                total_updated += updated_cnt
+            total_fetched, total_new, total_updated = self._sync_feeds(feeds, api_key)
             save_csv(self.tickets)
             self.status_label.setText(f"同期完了（{total_fetched}件）")
             if self.tray and (total_new or total_updated):
@@ -229,6 +213,24 @@ class MainWindow(QMainWindow):
             if self.sync_running:
                 delay_ms = max(refresh_minutes, 1) * 60 * 1000
                 self.schedule_sync(delay_ms)
+
+    def _sync_feeds(self, feeds: list[dict], api_key: str) -> tuple[int, int, int]:
+        total_fetched = 0
+        total_new = 0
+        total_updated = 0
+        for feed in feeds:
+            f_id = feed.get("id", "")
+            f_title = feed.get("title", "feed")
+            f_url = feed.get("url") or feed.get("feed_url")
+            f_search = feed.get("search", "")
+            if not f_url:
+                continue
+            fetched = fetch_feed(f_url, api_key, f_id, f_title, f_search)
+            total_fetched += len(fetched)
+            new_cnt, updated_cnt = self.merge_tickets(fetched)
+            total_new += new_cnt
+            total_updated += updated_cnt
+        return total_fetched, total_new, total_updated
 
     def merge_tickets(self, fetched: list[Ticket]) -> tuple[int, int]:
         existing = self.tickets
@@ -293,15 +295,13 @@ class MainWindow(QMainWindow):
                 child = QTreeWidgetItem(
                     [
                         t.ticket_id,
-                        "",
+                        "",  # 開くボタン
                         "済" if t.done else "",
-                        "",
+                        "",  # 済ボタン
                         "有" if t.search_hit else "",
                         t.updated_on,
                         t.done_at or "",
                         t.subject,
-                        "",
-                        "",
                     ]
                 )
                 child.setData(0, Qt.UserRole, t.ticket_id)

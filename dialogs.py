@@ -151,6 +151,14 @@ class ConfigDialog(QDialog):
         self.load_feeds_into_table()
 
     def save_and_close(self) -> None:
+        # validate feeds
+        if not self.feeds:
+            QMessageBox.warning(self, "フィードなし", "少なくとも1件のフィードを登録してください。")
+            return
+        for f in self.feeds:
+            if not f.get("url"):
+                QMessageBox.warning(self, "URL未入力", "URLが未入力のフィードがあります。")
+                return
         new_cfg = {
             "api_key": self.api_edit.text().strip(),
             "refresh_minutes": int(self.refresh_spin.value()),
