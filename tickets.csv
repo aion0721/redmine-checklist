@@ -14,3 +14,4 @@ ticket_id,subject,status,updated_on,url,done,done_at
 26132,バグのようなバグが表示された,unknown,2025-11-26T16:00:26+09:00,https://my.redmine.jp/demo/issues/26132,False,
 26131,test,unknown,2025-11-26T15:48:39+09:00,https://my.redmine.jp/demo/issues/26131,False,
 26130,tyest,unknown,2025-11-26T10:24:29+09:00,https://my.redmine.jp/demo/issues/26130,False,
+26145,sample,unknown,2025-12-14T13:36:16+09:00,https://my.redmine.jp/demo/issues/26145,False,

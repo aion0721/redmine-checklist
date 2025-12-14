@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from PySide6.QtCore import QTimer, Qt, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QIcon, QGuiApplication
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QHeaderView,
+    QStyle,
+    QSystemTrayIcon,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -186,6 +188,7 @@ class MainWindow(QMainWindow):
 
         self.build_ui()
         self.refresh_table()
+        self.init_tray()
 
     def build_ui(self) -> None:
         root = QWidget()
@@ -210,6 +213,16 @@ class MainWindow(QMainWindow):
         layout.addLayout(info)
 
         layout.addWidget(self.table)
+
+    def init_tray(self) -> None:
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            self.tray = None
+            return
+        style = QApplication.style()
+        icon = style.standardIcon(QStyle.SP_DesktopIcon)
+        self.tray = QSystemTrayIcon(icon, self)
+        self.tray.setToolTip("Redmine チケット済管理")
+        self.tray.show()
 
     def reload_config(self) -> None:
         self.config = load_config()
@@ -267,9 +280,11 @@ class MainWindow(QMainWindow):
         self.status_label.setText("同期中…")
         try:
             fetched = fetch_feed(feed_url, api_key)
-            self.merge_tickets(fetched)
+            new_cnt, updated_cnt = self.merge_tickets(fetched)
             save_csv(self.tickets)
             self.status_label.setText(f"同期完了（{len(fetched)}件）")
+            if self.tray and (new_cnt or updated_cnt):
+                self.notify_change(new_cnt, updated_cnt)
         except urllib.error.HTTPError as e:
             self.status_label.setText("HTTPエラー")
             QMessageBox.critical(self, "HTTPエラー", f"HTTP {e.code}: {e.reason}")
@@ -281,12 +296,15 @@ class MainWindow(QMainWindow):
                 delay_ms = max(refresh_minutes, 1) * 60 * 1000
                 self.schedule_sync(delay_ms)
 
-    def merge_tickets(self, fetched: list[Ticket]) -> None:
+    def merge_tickets(self, fetched: list[Ticket]) -> tuple[int, int]:
         existing = self.tickets
+        new_cnt = 0
+        updated_cnt = 0
         for t in fetched:
             if t.ticket_id in existing:
                 done = existing[t.ticket_id].done
                 done_at = existing[t.ticket_id].done_at
+                prev_updated = existing[t.ticket_id].updated_on
                 existing[t.ticket_id] = Ticket(
                     ticket_id=t.ticket_id,
                     subject=t.subject,
@@ -296,9 +314,13 @@ class MainWindow(QMainWindow):
                     done=done,
                     done_at=done_at,
                 )
+                if t.updated_on != prev_updated:
+                    updated_cnt += 1
             else:
                 existing[t.ticket_id] = t
+                new_cnt += 1
         self.refresh_table()
+        return new_cnt, updated_cnt
 
     def refresh_table(self) -> None:
         items = sorted(self.tickets.values(), key=lambda t: t.ticket_id)
@@ -372,6 +394,17 @@ class MainWindow(QMainWindow):
     def save_current(self) -> None:
         save_csv(self.tickets)
         QMessageBox.information(self, "保存完了", "tickets.csv を保存しました。")
+
+    def notify_change(self, new_cnt: int, updated_cnt: int) -> None:
+        if not self.tray:
+            return
+        lines = []
+        if new_cnt:
+            lines.append(f"新規 {new_cnt} 件")
+        if updated_cnt:
+            lines.append(f"更新 {updated_cnt} 件")
+        body = " / ".join(lines) if lines else "更新があります"
+        self.tray.showMessage("Redmine 更新通知", body, QSystemTrayIcon.Information, 5000)
 
 
 def main() -> None:

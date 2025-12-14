@@ -1,5 +1,5 @@
 {
   "feed_url": "https://my.redmine.jp/demo/issues.atom",
   "api_key": "aaa",
-  "refresh_minutes": 30
+  "refresh_minutes": 1
 }
