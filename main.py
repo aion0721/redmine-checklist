@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from PySide6.QtCore import QTimer, Qt, Signal, QThread, QUrl
+from PySide6.QtCore import QTimer, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
@@ -131,26 +131,6 @@ def save_csv(tickets: dict[str, Ticket]) -> None:
                     "done_at": t.done_at or "",
                 }
             )
-
-
-class FetchWorker(QThread):
-    success = Signal(list)
-    http_error = Signal(str)
-    failure = Signal(str)
-
-    def __init__(self, feed_url: str, api_key: str, parent=None) -> None:
-        super().__init__(parent)
-        self.feed_url = feed_url
-        self.api_key = api_key
-
-    def run(self) -> None:  # type: ignore[override]
-        try:
-            fetched = fetch_feed(self.feed_url, self.api_key)
-            self.success.emit(fetched)
-        except urllib.error.HTTPError as e:
-            self.http_error.emit(f"HTTP {e.code}: {e.reason}")
-        except Exception as e:  # noqa: BLE001
-            self.failure.emit(str(e))
 
 
 class MainWindow(QMainWindow):
@@ -285,33 +265,21 @@ class MainWindow(QMainWindow):
         api_key = self.config.get("api_key", "")
         refresh_minutes = int(self.config.get("refresh_minutes", 30))
         self.status_label.setText("同期中…")
-
-        self.worker = FetchWorker(feed_url, api_key, self)
-        self.worker.success.connect(self.on_fetch_success)
-        self.worker.http_error.connect(self.on_fetch_http_error)
-        self.worker.failure.connect(self.on_fetch_failure)
-        self.worker.finished.connect(self.on_fetch_finished)
-        self.worker.refresh_minutes = refresh_minutes  # type: ignore[attr-defined]
-        self.worker.start()
-
-    def on_fetch_success(self, fetched: list[Ticket]) -> None:
-        self.merge_tickets(fetched)
-        save_csv(self.tickets)
-        self.status_label.setText(f"同期完了（{len(fetched)}件）")
-
-    def on_fetch_http_error(self, msg: str) -> None:
+        try:
+            fetched = fetch_feed(feed_url, api_key)
+            self.merge_tickets(fetched)
+            save_csv(self.tickets)
+            self.status_label.setText(f"同期完了（{len(fetched)}件）")
+        except urllib.error.HTTPError as e:
             self.status_label.setText("HTTPエラー")
-            QMessageBox.critical(self, "HTTPエラー", msg)
-
-    def on_fetch_failure(self, msg: str) -> None:
-        self.status_label.setText("同期失敗")
-        QMessageBox.critical(self, "同期失敗", msg)
-
-    def on_fetch_finished(self) -> None:
-        refresh_minutes = int(self.config.get("refresh_minutes", 30))
-        if self.sync_running:
-            delay_ms = max(refresh_minutes, 1) * 60 * 1000
-            self.schedule_sync(delay_ms)
+            QMessageBox.critical(self, "HTTPエラー", f"HTTP {e.code}: {e.reason}")
+        except Exception as e:  # noqa: BLE001
+            self.status_label.setText("同期失敗")
+            QMessageBox.critical(self, "同期失敗", str(e))
+        finally:
+            if self.sync_running:
+                delay_ms = max(refresh_minutes, 1) * 60 * 1000
+                self.schedule_sync(delay_ms)
 
     def merge_tickets(self, fetched: list[Ticket]) -> None:
         existing = self.tickets
