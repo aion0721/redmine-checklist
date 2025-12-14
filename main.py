@@ -46,11 +46,14 @@ class Ticket:
     feed_title: str = ""
     feed_url: str = ""
     feed_search: str = ""
+    search_hit: bool = False
     done: bool = False
     done_at: str | None = None
 
     @classmethod
-    def from_entry(cls, entry: ET.Element, feed_title: str, feed_url: str, feed_search: str) -> "Ticket":
+    def from_entry(
+        cls, entry: ET.Element, feed_title: str, feed_url: str, feed_search: str, search_hit: bool
+    ) -> "Ticket":
         raw_title = (entry.findtext("atom:title", default="", namespaces=ATOM_NS) or "").strip()
         updated = (entry.findtext("atom:updated", default="", namespaces=ATOM_NS) or "").strip()
         entry_id = entry.findtext("atom:id", default="", namespaces=ATOM_NS) or ""
@@ -68,6 +71,7 @@ class Ticket:
             feed_title=feed_title,
             feed_url=feed_url,
             feed_search=feed_search,
+            search_hit=search_hit,
         )
 
 
@@ -281,10 +285,14 @@ def fetch_feed(feed_url: str, api_key: str, feed_title: str, feed_search: str, t
     root = ET.fromstring(data)
     tickets: list[Ticket] = []
     for entry in root.findall("atom:entry", ATOM_NS):
-        t = Ticket.from_entry(entry, feed_title, feed_url, feed_search)
+        search_hit = False
         if feed_search:
-            if feed_search.lower() not in t.subject.lower():
-                continue
+            term = feed_search.lower()
+            # 件名・説明(content)に含まれているか判定のみ。除外はしない。
+            title_text = (entry.findtext("atom:title", default="", namespaces=ATOM_NS) or "").lower()
+            content_text = (entry.findtext("atom:content", default="", namespaces=ATOM_NS) or "").lower()
+            search_hit = term in title_text or term in content_text
+        t = Ticket.from_entry(entry, feed_title, feed_url, feed_search, search_hit)
         tickets.append(t)
     return tickets
 
@@ -305,6 +313,7 @@ def load_csv() -> dict[str, Ticket]:
                 feed_url=row.get("feed_url", ""),
                 feed_search=row.get("feed_search", ""),
                 url=row.get("url", ""),
+                search_hit=row.get("search_hit", "False") == "True",
                 done=row.get("done", "False") == "True",
                 done_at=row.get("done_at") or None,
             )
@@ -321,6 +330,7 @@ def save_csv(tickets: dict[str, Ticket]) -> None:
         "feed_title",
         "feed_url",
         "feed_search",
+        "search_hit",
         "done",
         "done_at",
     ]
@@ -338,6 +348,7 @@ def save_csv(tickets: dict[str, Ticket]) -> None:
                     "feed_title": t.feed_title,
                     "feed_url": t.feed_url,
                     "feed_search": t.feed_search,
+                    "search_hit": str(t.search_hit),
                     "done": str(t.done),
                     "done_at": t.done_at or "",
                 }
@@ -387,9 +398,9 @@ class MainWindow(QMainWindow):
         self.save_btn = QPushButton("手動保存")
         self.save_btn.clicked.connect(self.save_current)
 
-        self.table = QTableWidget(0, 9)
+        self.table = QTableWidget(0, 10)
         self.table.setHorizontalHeaderLabels(
-            ["ID", "件名", "フィード", "ステータス", "更新日", "済", "済日時", "済ボタン", "開く"]
+            ["ID", "件名", "フィード", "ステータス", "更新日", "検索文字列有無", "済", "済日時", "済ボタン", "開く"]
         )
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.MultiSelection)
@@ -397,7 +408,7 @@ class MainWindow(QMainWindow):
         header.setStretchLastSection(False)
         header.setSectionResizeMode(QHeaderView.Fixed)
         # 固定幅を設定（必要に応じて調整してください）
-        fixed_widths = [80, 300, 140, 120, 160, 50, 160, 80, 80]
+        fixed_widths = [80, 280, 140, 120, 160, 90, 50, 160, 80, 80]
         for idx, w in enumerate(fixed_widths):
             header.resizeSection(idx, w)
         self.table.verticalHeader().setVisible(False)
@@ -553,6 +564,7 @@ class MainWindow(QMainWindow):
                     feed_title=t.feed_title or existing[t.ticket_id].feed_title,
                     feed_url=t.feed_url or existing[t.ticket_id].feed_url,
                     feed_search=t.feed_search or existing[t.ticket_id].feed_search,
+                    search_hit=t.search_hit,
                     done=done,
                     done_at=done_at,
                 )
@@ -575,22 +587,23 @@ class MainWindow(QMainWindow):
                 t.feed_title,
                 t.status,
                 t.updated_on,
+                "有" if t.search_hit else "",
                 "済" if t.done else "",
                 t.done_at or "",
             ]
             for col, val in enumerate(values):
                 item = QTableWidgetItem(val)
-                if col in (0, 5):
+                if col in (0, 5, 6):
                     item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(row, col, item)
 
             done_btn = QPushButton("済切替")
             done_btn.clicked.connect(lambda _, tid=t.ticket_id: self.toggle_done_one(tid))
-            self.table.setCellWidget(row, 7, done_btn)
+            self.table.setCellWidget(row, 8, done_btn)
 
             open_btn = QPushButton("開く")
             open_btn.clicked.connect(lambda _, tid=t.ticket_id: self.open_ticket(tid))
-            self.table.setCellWidget(row, 8, open_btn)
+            self.table.setCellWidget(row, 9, open_btn)
 
         # 固定幅設定を維持
         # （ヘッダのリサイズ設定で固定にしているため、ここでは何もしない）
