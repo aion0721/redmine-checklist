@@ -39,11 +39,14 @@ class Ticket:
     status: str
     updated_on: str
     url: str = ""
+    feed_title: str = ""
+    feed_url: str = ""
+    feed_search: str = ""
     done: bool = False
     done_at: str | None = None
 
     @classmethod
-    def from_entry(cls, entry: ET.Element) -> "Ticket":
+    def from_entry(cls, entry: ET.Element, feed_title: str, feed_url: str, feed_search: str) -> "Ticket":
         raw_title = (entry.findtext("atom:title", default="", namespaces=ATOM_NS) or "").strip()
         updated = (entry.findtext("atom:updated", default="", namespaces=ATOM_NS) or "").strip()
         entry_id = entry.findtext("atom:id", default="", namespaces=ATOM_NS) or ""
@@ -52,7 +55,16 @@ class Ticket:
         url = entry_id  # Redmineのatom:idはチケットURLが入るケースが多い
         ticket_id = extract_ticket_id(entry, raw_title)
         subject = extract_subject(raw_title)
-        return cls(ticket_id=ticket_id, subject=subject, status=status, updated_on=updated, url=url)
+        return cls(
+            ticket_id=ticket_id,
+            subject=subject,
+            status=status,
+            updated_on=updated,
+            url=url,
+            feed_title=feed_title,
+            feed_url=feed_url,
+            feed_search=feed_search,
+        )
 
 
 def extract_ticket_id(entry: ET.Element, title_text: str) -> str:
@@ -74,9 +86,15 @@ def extract_subject(title_text: str) -> str:
 def load_config() -> dict:
     if not os.path.exists(CONFIG_PATH):
         default_conf = {
-            "feed_url": "https://redmine.example.com/projects/demo/issues.atom",
             "api_key": "PUT_YOUR_API_KEY",
             "refresh_minutes": 30,
+            "feeds": [
+                {
+                    "title": "Demo feed",
+                    "url": "https://redmine.example.com/projects/demo/issues.atom",
+                    "search": "",
+                }
+            ],
         }
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(default_conf, f, indent=2)
@@ -85,7 +103,27 @@ def load_config() -> dict:
         return json.load(f)
 
 
-def fetch_feed(feed_url: str, api_key: str, timeout: int = 15) -> list[Ticket]:
+def normalize_feeds(cfg: dict) -> list[dict]:
+    feeds = cfg.get("feeds")
+    if isinstance(feeds, list) and feeds:
+        normed = []
+        for f in feeds:
+            if not isinstance(f, dict):
+                continue
+            title = f.get("title") or f.get("name") or "feed"
+            url = f.get("url") or f.get("feed_url") or ""
+            search = f.get("search", "")
+            if url:
+                normed.append({"title": title, "url": url, "search": search})
+        if normed:
+            return normed
+    # backward compatibility: single feed_url
+    if cfg.get("feed_url"):
+        return [{"title": "default", "url": cfg["feed_url"], "search": ""}]
+    return []
+
+
+def fetch_feed(feed_url: str, api_key: str, feed_title: str, feed_search: str, timeout: int = 15) -> list[Ticket]:
     req = urllib.request.Request(feed_url)
     req.add_header("X-Redmine-API-Key", api_key)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -93,7 +131,11 @@ def fetch_feed(feed_url: str, api_key: str, timeout: int = 15) -> list[Ticket]:
     root = ET.fromstring(data)
     tickets: list[Ticket] = []
     for entry in root.findall("atom:entry", ATOM_NS):
-        tickets.append(Ticket.from_entry(entry))
+        t = Ticket.from_entry(entry, feed_title, feed_url, feed_search)
+        if feed_search:
+            if feed_search.lower() not in t.subject.lower():
+                continue
+        tickets.append(t)
     return tickets
 
 
@@ -109,6 +151,9 @@ def load_csv() -> dict[str, Ticket]:
                 subject=row["subject"],
                 status=row["status"],
                 updated_on=row["updated_on"],
+                feed_title=row.get("feed_title", ""),
+                feed_url=row.get("feed_url", ""),
+                feed_search=row.get("feed_search", ""),
                 url=row.get("url", ""),
                 done=row.get("done", "False") == "True",
                 done_at=row.get("done_at") or None,
@@ -117,7 +162,18 @@ def load_csv() -> dict[str, Ticket]:
 
 
 def save_csv(tickets: dict[str, Ticket]) -> None:
-    fieldnames = ["ticket_id", "subject", "status", "updated_on", "url", "done", "done_at"]
+    fieldnames = [
+        "ticket_id",
+        "subject",
+        "status",
+        "updated_on",
+        "url",
+        "feed_title",
+        "feed_url",
+        "feed_search",
+        "done",
+        "done_at",
+    ]
     with open(DATA_PATH, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -129,6 +185,9 @@ def save_csv(tickets: dict[str, Ticket]) -> None:
                     "status": t.status,
                     "updated_on": t.updated_on,
                     "url": t.url,
+                    "feed_title": t.feed_title,
+                    "feed_url": t.feed_url,
+                    "feed_search": t.feed_search,
                     "done": str(t.done),
                     "done_at": t.done_at or "",
                 }
@@ -153,6 +212,8 @@ class MainWindow(QMainWindow):
         self.countdown_timer.setInterval(1000)
         self.countdown_timer.timeout.connect(self.update_remaining)
 
+        self.tray: QSystemTrayIcon | None = None
+
         self.status_label = QLabel("停止中")
         self.remaining_label = QLabel("-")
         self.only_open_chk = QCheckBox("未済のみ表示")
@@ -173,15 +234,17 @@ class MainWindow(QMainWindow):
         self.save_btn = QPushButton("手動保存")
         self.save_btn.clicked.connect(self.save_current)
 
-        self.table = QTableWidget(0, 8)
-        self.table.setHorizontalHeaderLabels(["ID", "件名", "ステータス", "更新日", "済", "済日時", "済ボタン", "開く"])
+        self.table = QTableWidget(0, 9)
+        self.table.setHorizontalHeaderLabels(
+            ["ID", "件名", "フィード", "ステータス", "更新日", "済", "済日時", "済ボタン", "開く"]
+        )
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.MultiSelection)
         header = self.table.horizontalHeader()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(QHeaderView.Fixed)
         # 固定幅を設定（必要に応じて調整してください）
-        fixed_widths = [80, 320, 120, 160, 50, 160, 80, 80]
+        fixed_widths = [80, 300, 140, 120, 160, 50, 160, 80, 80]
         for idx, w in enumerate(fixed_widths):
             header.resizeSection(idx, w)
         self.table.verticalHeader().setVisible(False)
@@ -236,12 +299,12 @@ class MainWindow(QMainWindow):
 
     def start_sync(self) -> None:
         api_key = self.config.get("api_key", "")
-        feed_url = self.config.get("feed_url", "")
+        feeds = normalize_feeds(self.config)
         if not api_key or api_key == "PUT_YOUR_API_KEY":
             QMessageBox.warning(self, "APIキー未設定", "config.json の api_key を設定してください。")
             return
-        if not feed_url:
-            QMessageBox.warning(self, "URL未設定", "config.json の feed_url を設定してください。")
+        if not feeds:
+            QMessageBox.warning(self, "URL未設定", "config.json の feeds に URL を設定してください。")
             return
         self.sync_running = True
         self.start_btn.setText("同期停止")
@@ -274,17 +337,33 @@ class MainWindow(QMainWindow):
             self.remaining_label.setText(f"{minutes:02d}:{seconds:02d}")
 
     def sync_now(self) -> None:
-        feed_url = self.config.get("feed_url", "")
         api_key = self.config.get("api_key", "")
         refresh_minutes = int(self.config.get("refresh_minutes", 30))
+        feeds = normalize_feeds(self.config)
         self.status_label.setText("同期中…")
+        if not feeds:
+            QMessageBox.warning(self, "URL未設定", "config.json の feeds に URL を設定してください。")
+            self.status_label.setText("同期失敗")
+            return
         try:
-            fetched = fetch_feed(feed_url, api_key)
-            new_cnt, updated_cnt = self.merge_tickets(fetched)
+            total_fetched = 0
+            total_new = 0
+            total_updated = 0
+            for feed in feeds:
+                f_title = feed.get("title", "feed")
+                f_url = feed.get("url") or feed.get("feed_url")
+                f_search = feed.get("search", "")
+                if not f_url:
+                    continue
+                fetched = fetch_feed(f_url, api_key, f_title, f_search)
+                total_fetched += len(fetched)
+                new_cnt, updated_cnt = self.merge_tickets(fetched)
+                total_new += new_cnt
+                total_updated += updated_cnt
             save_csv(self.tickets)
-            self.status_label.setText(f"同期完了（{len(fetched)}件）")
-            if self.tray and (new_cnt or updated_cnt):
-                self.notify_change(new_cnt, updated_cnt)
+            self.status_label.setText(f"同期完了（{total_fetched}件）")
+            if self.tray and (total_new or total_updated):
+                self.notify_change(total_new, total_updated)
         except urllib.error.HTTPError as e:
             self.status_label.setText("HTTPエラー")
             QMessageBox.critical(self, "HTTPエラー", f"HTTP {e.code}: {e.reason}")
@@ -311,6 +390,9 @@ class MainWindow(QMainWindow):
                     status=t.status,
                     updated_on=t.updated_on,
                     url=t.url or existing[t.ticket_id].url,
+                    feed_title=t.feed_title or existing[t.ticket_id].feed_title,
+                    feed_url=t.feed_url or existing[t.ticket_id].feed_url,
+                    feed_search=t.feed_search or existing[t.ticket_id].feed_search,
                     done=done,
                     done_at=done_at,
                 )
@@ -330,6 +412,7 @@ class MainWindow(QMainWindow):
             values = [
                 t.ticket_id,
                 t.subject,
+                t.feed_title,
                 t.status,
                 t.updated_on,
                 "済" if t.done else "",
@@ -337,17 +420,17 @@ class MainWindow(QMainWindow):
             ]
             for col, val in enumerate(values):
                 item = QTableWidgetItem(val)
-                if col in (0, 4):
+                if col in (0, 5):
                     item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(row, col, item)
 
             done_btn = QPushButton("済切替")
             done_btn.clicked.connect(lambda _, tid=t.ticket_id: self.toggle_done_one(tid))
-            self.table.setCellWidget(row, 6, done_btn)
+            self.table.setCellWidget(row, 7, done_btn)
 
             open_btn = QPushButton("開く")
             open_btn.clicked.connect(lambda _, tid=t.ticket_id: self.open_ticket(tid))
-            self.table.setCellWidget(row, 7, open_btn)
+            self.table.setCellWidget(row, 8, open_btn)
 
         # 固定幅設定を維持
         # （ヘッダのリサイズ設定で固定にしているため、ここでは何もしない）
