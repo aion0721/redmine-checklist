@@ -14,5 +14,6 @@
       "url": "http://localhost:3000/projects/sample2/issues.atom?key=19b161f2c929ffa3cdd5e8afeee9b8a473a61b58",
       "search": ""
     }
-  ]
+  ],
+  "only_open": true
 }

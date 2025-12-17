@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from config_manager import load_config, normalize_feeds
+from config_manager import load_config, normalize_feeds, save_config
 from dialogs import ConfigDialog
 from feed_client import fetch_feed
 from models import Ticket
@@ -56,7 +56,7 @@ class MainWindow(QMainWindow):
         self.status_label = QLabel("停止中")
         self.remaining_label = QLabel("-")
         self.only_open_chk = QCheckBox("未済のみ表示")
-        self.only_open_chk.stateChanged.connect(self.refresh_table)
+        self.only_open_chk.stateChanged.connect(self.handle_only_open_changed)
 
         self.show_updated_chk = QCheckBox("更新日を表示")
         self.show_updated_chk.setChecked(False)
@@ -94,9 +94,10 @@ class MainWindow(QMainWindow):
             header.resizeSection(idx, w)
         self.tree.setSelectionMode(QTreeWidget.MultiSelection)
         self.tree.setSelectionBehavior(QTreeWidget.SelectRows)
+        self.tree.itemDoubleClicked.connect(self.handle_item_double_clicked)
 
         self.build_ui()
-        self.refresh_table()
+        self.apply_config_settings()
         self.init_tray()
         self.update_column_visibility()
 
@@ -140,12 +141,14 @@ class MainWindow(QMainWindow):
 
     def reload_config(self) -> None:
         self.config = load_config()
+        self.apply_config_settings()
         QMessageBox.information(self, "設定再読込", "config.json を再読込しました。")
 
     def open_config_dialog(self) -> None:
         dlg = ConfigDialog(self.config, self)
         if dlg.exec() == QDialog.Accepted:
             self.config = load_config()
+            self.apply_config_settings()
             QMessageBox.information(self, "設定保存", "config.json を保存しました。")
 
     def toggle_sync(self) -> None:
@@ -355,6 +358,54 @@ class MainWindow(QMainWindow):
         if changed:
             save_csv(self.tickets)
             self.refresh_table()
+
+    def set_done(self, ticket_id: str) -> None:
+        t = self.tickets.get(ticket_id)
+        if not t:
+            QMessageBox.information(self, "未選択", "チケットが見つかりません。")
+            return
+        if t.done:
+            return
+        now = datetime.now().isoformat(timespec="seconds")
+        t.done = True
+        t.done_at = now
+        save_csv(self.tickets)
+        self.refresh_table()
+
+    def handle_item_double_clicked(self, item: QTreeWidgetItem, _: int) -> None:
+        ticket_id = item.data(0, Qt.UserRole)
+        if not ticket_id:
+            return
+        t = self.tickets.get(ticket_id)
+        if not t:
+            QMessageBox.information(self, "未選択", "チケットが見つかりません。")
+            return
+        if not t.url:
+            QMessageBox.information(self, "URLなし", "チケットのURLがありません。")
+            return
+
+        QDesktopServices.openUrl(QUrl(t.url))
+        res = QMessageBox.question(
+            self,
+            "済にしますか",
+            f"この明細を済にしますか？\nID: {t.ticket_id}\n件名: {t.subject}",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if res == QMessageBox.Yes:
+            self.set_done(ticket_id)
+
+    def handle_only_open_changed(self, state: int) -> None:
+        self.config["only_open"] = bool(state)
+        save_config(self.config)
+        self.refresh_table()
+
+    def apply_config_settings(self) -> None:
+        # 設定に保存された表示オプションを反映
+        self.only_open_chk.blockSignals(True)
+        self.only_open_chk.setChecked(bool(self.config.get("only_open", False)))
+        self.only_open_chk.blockSignals(False)
+        self.refresh_table()
 
     def open_ticket(self, ticket_id: str) -> None:
         t = self.tickets.get(ticket_id)

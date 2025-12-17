@@ -30,7 +30,7 @@ class FeedEditDialog(QDialog):
         form = QFormLayout()
         form.addRow("タイトル", self.title_edit)
         form.addRow("URL", self.url_edit)
-        form.addRow("検索文字列", self.search_edit)
+        form.addRow("検索キーワード", self.search_edit)
 
         btn_box = QHBoxLayout()
         ok_btn = QPushButton("OK")
@@ -60,7 +60,7 @@ class FeedEditDialog(QDialog):
 class ConfigDialog(QDialog):
     def __init__(self, cfg: dict, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("設定（config.json）")
+        self.setWindowTitle("設定 (config.json)")
         self.resize(700, 420)
         self.cfg = cfg
         self.feeds: list[dict] = normalize_feeds(cfg)
@@ -71,7 +71,7 @@ class ConfigDialog(QDialog):
         self.refresh_spin.setValue(int(cfg.get("refresh_minutes", 30)))
 
         self.feed_table = QTableWidget(0, 4)
-        self.feed_table.setHorizontalHeaderLabels(["ID", "タイトル", "URL", "検索文字列"])
+        self.feed_table.setHorizontalHeaderLabels(["ID", "タイトル", "URL", "検索キーワード"])
         self.feed_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.feed_table.setSelectionMode(QTableWidget.SingleSelection)
         header = self.feed_table.horizontalHeader()
@@ -160,6 +160,7 @@ class ConfigDialog(QDialog):
                 QMessageBox.warning(self, "URL未入力", "URLが未入力のフィードがあります。")
                 return
         new_cfg = {
+            **self.cfg,  # keep other preferences such as display options
             "api_key": self.api_edit.text().strip(),
             "refresh_minutes": int(self.refresh_spin.value()),
             "feeds": self.feeds,
