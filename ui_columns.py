@@ -13,10 +13,11 @@ class ColumnDef:
     IDX_SEARCH_HIT: int = 4
     IDX_UPDATED: int = 5
     IDX_DONE_AT: int = 6
-    IDX_SUBJECT: int = 7
+    IDX_DUE_DATE: int = 7
+    IDX_SUBJECT: int = 8
 
 
 COLUMNS = ColumnDef(
-    labels=("ID", "開く", "済", "済ボタン", "検索文字列有無", "更新日", "済日時", "件名"),
-    widths=(80, 80, 50, 90, 120, 180, 160, 340),
+    labels=("ID", "開く", "済", "済切替", "検索ヒット", "更新日", "済日時", "期日", "件名"),
+    widths=(80, 80, 50, 90, 120, 180, 160, 200, 300),
 )

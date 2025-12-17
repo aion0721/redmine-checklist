@@ -18,6 +18,7 @@ def load_config() -> dict[str, Any]:
                     "search": "",
                 }
             ],
+            "enable_api_details": False,
         }
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(default_conf, f, indent=2)

@@ -11,6 +11,7 @@ class Ticket:
     subject: str
     status: str
     updated_on: str
+    due_date: str = ""
     url: str = ""
     feed_id: str = ""
     feed_title: str = ""
