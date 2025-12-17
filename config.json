@@ -13,7 +13,15 @@
       "title": "Project2",
       "url": "http://localhost:3000/projects/sample2/issues.atom?key=19b161f2c929ffa3cdd5e8afeee9b8a473a61b58",
       "search": ""
+    },
+    {
+      "id": "82028396611d48f5897373a870f20d98",
+      "title": "aaa",
+      "url": "http://localhost:3000/projects/sample-1/issues.atom?key=19b161f2c929ffa3cdd5e8afeee9b8a473a61b58",
+      "search": "sample"
     }
   ],
-  "only_open": true
+  "only_open": true,
+  "show_done_at": false,
+  "show_updated": false
 }

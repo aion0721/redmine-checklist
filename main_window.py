@@ -60,11 +60,11 @@ class MainWindow(QMainWindow):
 
         self.show_updated_chk = QCheckBox("更新日を表示")
         self.show_updated_chk.setChecked(False)
-        self.show_updated_chk.stateChanged.connect(self.update_column_visibility)
+        self.show_updated_chk.stateChanged.connect(self.handle_show_updated_changed)
 
         self.show_done_at_chk = QCheckBox("済日時を表示")
         self.show_done_at_chk.setChecked(False)
-        self.show_done_at_chk.stateChanged.connect(self.update_column_visibility)
+        self.show_done_at_chk.stateChanged.connect(self.handle_show_done_at_changed)
 
         self.start_btn = QPushButton("同期開始")
         self.start_btn.clicked.connect(self.toggle_sync)
@@ -78,11 +78,11 @@ class MainWindow(QMainWindow):
         self.reload_btn = QPushButton("設定再読込")
         self.reload_btn.clicked.connect(self.reload_config)
 
+        self.help_btn = QPushButton("ヘルプ")
+        self.help_btn.clicked.connect(self.open_help)
+
         self.toggle_done_btn = QPushButton("選択一括済/未済切替")
         self.toggle_done_btn.clicked.connect(self.toggle_selected)
-
-        self.save_btn = QPushButton("手動データ保存")
-        self.save_btn.clicked.connect(self.save_current)
 
         self.tree = QTreeWidget()
         self.tree.setColumnCount(len(COLUMNS.labels))
@@ -100,6 +100,8 @@ class MainWindow(QMainWindow):
         self.apply_config_settings()
         self.init_tray()
         self.update_column_visibility()
+        QTimer.singleShot(0, self.start_sync)
+
 
     def build_ui(self) -> None:
         root = QWidget()
@@ -111,11 +113,11 @@ class MainWindow(QMainWindow):
         top.addWidget(self.sync_btn)
         top.addWidget(self.reload_btn)
         top.addWidget(self.config_btn)
+        top.addWidget(self.help_btn)
         top.addWidget(self.only_open_chk)
         top.addWidget(self.show_updated_chk)
         top.addWidget(self.show_done_at_chk)
         top.addWidget(self.toggle_done_btn)
-        top.addWidget(self.save_btn)
         top.addStretch(1)
         layout.addLayout(top)
 
@@ -139,17 +141,21 @@ class MainWindow(QMainWindow):
         self.tray.setToolTip("Redmine チケット済管理")
         self.tray.show()
 
-    def reload_config(self) -> None:
+    def reload_config(self, show_message: bool = True) -> None:
         self.config = load_config()
         self.apply_config_settings()
-        QMessageBox.information(self, "設定再読込", "config.json を再読込しました。")
+        if show_message:
+            QMessageBox.information(self, "設定再読込", "config.json を再読込しました。")
 
     def open_config_dialog(self) -> None:
         dlg = ConfigDialog(self.config, self)
         if dlg.exec() == QDialog.Accepted:
-            self.config = load_config()
-            self.apply_config_settings()
+            self.reload_config(show_message=False)
             QMessageBox.information(self, "設定保存", "config.json を保存しました。")
+
+    def open_help(self) -> None:
+        # 固定のヘルプページをブラウザで開く
+        QDesktopServices.openUrl(QUrl("https://www.redmine.org/guide"))
 
     def toggle_sync(self) -> None:
         if self.sync_running:
@@ -400,11 +406,29 @@ class MainWindow(QMainWindow):
         save_config(self.config)
         self.refresh_table()
 
+    def handle_show_updated_changed(self, state: int) -> None:
+        self.config["show_updated"] = bool(state)
+        save_config(self.config)
+        self.update_column_visibility()
+
+    def handle_show_done_at_changed(self, state: int) -> None:
+        self.config["show_done_at"] = bool(state)
+        save_config(self.config)
+        self.update_column_visibility()
+
     def apply_config_settings(self) -> None:
         # 設定に保存された表示オプションを反映
         self.only_open_chk.blockSignals(True)
         self.only_open_chk.setChecked(bool(self.config.get("only_open", False)))
         self.only_open_chk.blockSignals(False)
+
+        self.show_updated_chk.blockSignals(True)
+        self.show_updated_chk.setChecked(bool(self.config.get("show_updated", False)))
+        self.show_updated_chk.blockSignals(False)
+
+        self.show_done_at_chk.blockSignals(True)
+        self.show_done_at_chk.setChecked(bool(self.config.get("show_done_at", False)))
+        self.show_done_at_chk.blockSignals(False)
         self.refresh_table()
 
     def open_ticket(self, ticket_id: str) -> None:
@@ -416,10 +440,6 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "URLなし", "チケットのURLがありません。")
             return
         QDesktopServices.openUrl(QUrl(t.url))
-
-    def save_current(self) -> None:
-        save_csv(self.tickets)
-        QMessageBox.information(self, "保存完了", "tickets.csv を保存しました。")
 
     def notify_change(self, new_cnt: int, updated_cnt: int) -> None:
         if not self.tray:
