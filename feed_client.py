@@ -2,7 +2,7 @@ import json
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
-from typing import Iterable
+from typing import Iterable, Tuple
 
 from constants import ATOM_NS
 from models import Ticket
@@ -43,8 +43,8 @@ def fetch_feed(
     return tickets
 
 
-def fetch_issue_due_date(issue_url: str, api_key: str, timeout: int = 15) -> str:
-    """Redmine REST APIから期日（カスタムフィールド名: 期日）を取得する。"""
+def fetch_issue_details(issue_url: str, api_key: str, timeout: int = 15) -> dict:
+    """Redmine REST APIから期日・説明・カスタムフィールドを取得する。"""
     detail_url = issue_url.rstrip("/") + ".json?include=journals"
     req = urllib.request.Request(detail_url)
     req.add_header("X-Redmine-API-Key", api_key)
@@ -52,10 +52,14 @@ def fetch_issue_due_date(issue_url: str, api_key: str, timeout: int = 15) -> str
         data = resp.read()
     payload = json.loads(data.decode("utf-8"))
     issue = payload.get("issue", {})
-    # 期日フィールド（デフォルト）優先
-    if issue.get("due_date"):
-        return issue.get("due_date") or ""
+    due_date = issue.get("due_date") or ""
+    custom_fields_map = {}
     for cf in issue.get("custom_fields", []):
-        if cf.get("name") == "期日":
-            return cf.get("value") or ""
-    return ""
+        name = cf.get("name")
+        value = cf.get("value")
+        if name:
+            custom_fields_map[name] = value or ""
+        if name == "期日" and not due_date:
+            due_date = value or ""
+    description = issue.get("description") or ""
+    return {"due_date": due_date, "description": description, "custom_fields": custom_fields_map}

@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 
 from config_manager import load_config, normalize_feeds, save_config
 from dialogs import ConfigDialog
-from feed_client import fetch_feed, fetch_issue_due_date
+from feed_client import _split_terms, fetch_feed, fetch_issue_details
 from models import Ticket
 from storage import load_csv, save_csv
 from ui_columns import COLUMNS
@@ -228,21 +228,22 @@ class MainWindow(QMainWindow):
             f_title = feed.get("title", "feed")
             f_url = feed.get("url") or feed.get("feed_url")
             f_search = feed.get("search", "")
+            f_search_custom = feed.get("search_custom", "")
             if not f_url:
                 continue
             fetched = fetch_feed(f_url, api_key, f_id, f_title, f_search)
             total_fetched += len(fetched)
-            new_cnt, updated_cnt, targets = self.merge_tickets(fetched)
+            new_cnt, updated_cnt, targets = self.merge_tickets(fetched, f_search_custom)
             total_new += new_cnt
             total_updated += updated_cnt
             detail_targets.update(targets)
 
         if self.config.get("enable_api_details", False) and detail_targets:
-            self._update_due_dates(detail_targets, api_key)
+            self._update_details(detail_targets, api_key)
 
         return total_fetched, total_new, total_updated
 
-    def merge_tickets(self, fetched: list[Ticket]) -> tuple[int, int, set[str]]:
+    def merge_tickets(self, fetched: list[Ticket], feed_search_custom: str) -> tuple[int, int, set[str]]:
         existing = self.tickets
         new_cnt = 0
         updated_cnt = 0
@@ -261,31 +262,50 @@ class MainWindow(QMainWindow):
                     feed_id=t.feed_id or prev.feed_id,
                     feed_title=t.feed_title or prev.feed_title,
                     feed_search=t.feed_search or prev.feed_search,
+                    feed_search_custom=feed_search_custom or prev.feed_search_custom,
                     search_hit=t.search_hit,
                     due_date=prev.due_date,
+                    description=prev.description,
+                    custom_fields=prev.custom_fields,
                     done=done,
                     done_at=done_at,
                 )
-                # updated_on が変わったときだけ更新扱いにする
                 if t.updated_on != prev.updated_on:
                     updated_cnt += 1
                     detail_targets.add(t.ticket_id)
             else:
+                t.feed_search_custom = feed_search_custom
                 existing[t.ticket_id] = t
                 new_cnt += 1
                 detail_targets.add(t.ticket_id)
         self.refresh_table()
         return new_cnt, updated_cnt, detail_targets
 
-    def _update_due_dates(self, ticket_ids: Iterable[str], api_key: str) -> None:
+    def _update_details(self, ticket_ids: Iterable[str], api_key: str) -> None:
         for tid in ticket_ids:
             t = self.tickets.get(tid)
             if not t or not t.url:
                 continue
             try:
-                due_date = fetch_issue_due_date(t.url, api_key)
-                if due_date:
-                    t.due_date = due_date
+                details = fetch_issue_details(t.url, api_key)
+                if details.get("due_date"):
+                    t.due_date = details["due_date"]
+                if details.get("description") is not None:
+                    t.description = details["description"]
+                if details.get("custom_fields") is not None:
+                    t.custom_fields = details["custom_fields"]
+                terms = _split_terms(t.feed_search)
+                custom_targets = _split_terms(t.feed_search_custom)
+                if terms and (t.description or t.custom_fields):
+                    desc = (t.description or "").lower()
+                    hit = any(term in desc for term in terms)
+                    if not hit and custom_targets and t.custom_fields:
+                        for name in custom_targets:
+                            val = (t.custom_fields or {}).get(name, "").lower()
+                            if any(term in val for term in terms):
+                                hit = True
+                                break
+                    t.search_hit = t.search_hit or hit
             except Exception:
                 continue
         self.refresh_table()
@@ -437,7 +457,7 @@ class MainWindow(QMainWindow):
         if not pending_ids:
             QMessageBox.information(self, "対象なし", "未済のチケットがありません。")
             return
-        self._update_due_dates(pending_ids, api_key)
+        self._update_details(pending_ids, api_key)
         save_csv(self.tickets)
         QMessageBox.information(self, "再取得完了", "未済チケットの追加情報を再取得しました。")
 

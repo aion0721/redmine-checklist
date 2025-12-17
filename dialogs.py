@@ -27,12 +27,15 @@ class FeedEditDialog(QDialog):
         self.title_edit = QLineEdit(feed.get("title", "") if feed else "")
         self.url_edit = QLineEdit(feed.get("url", "") if feed else "")
         self.search_edit = QLineEdit(feed.get("search", "") if feed else "")
+        self.search_custom_edit = QLineEdit(feed.get("search_custom", "") if feed else "")
 
         form = QFormLayout()
         form.addRow("タイトル", self.title_edit)
         form.addRow("URL", self.url_edit)
         form.addRow("検索キーワード", self.search_edit)
         form.addRow("", QLabel("※カンマ区切りで複数指定できます（OR条件）"))
+        form.addRow("検索対象カスタムフィールド", self.search_custom_edit)
+        form.addRow("", QLabel("※カンマ区切り（OR）。「追加情報取得（API）」が必要"))
 
         btn_box = QHBoxLayout()
         ok_btn = QPushButton("OK")
@@ -52,10 +55,11 @@ class FeedEditDialog(QDialog):
             title = self.title_edit.text().strip() or "feed"
             url = self.url_edit.text().strip()
             search = self.search_edit.text().strip()
+            search_custom = self.search_custom_edit.text().strip()
             if not url:
                 QMessageBox.warning(self, "URL未入力", "URLを入力してください。")
                 return None
-            return {"title": title, "url": url, "search": search}
+            return {"title": title, "url": url, "search": search, "search_custom": search_custom}
         return None
 
 
@@ -81,8 +85,8 @@ class ConfigDialog(QDialog):
         self.sort_by_due_chk = QCheckBox("期日でソート")
         self.sort_by_due_chk.setChecked(bool(cfg.get("sort_by_due", False)))
 
-        self.feed_table = QTableWidget(0, 3)
-        self.feed_table.setHorizontalHeaderLabels(["タイトル", "URL", "検索キーワード"])
+        self.feed_table = QTableWidget(0, 4)
+        self.feed_table.setHorizontalHeaderLabels(["タイトル", "URL", "検索キーワード", "検索対象CF"])
         self.feed_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.feed_table.setSelectionMode(QTableWidget.SingleSelection)
         header = self.feed_table.horizontalHeader()
@@ -133,6 +137,7 @@ class ConfigDialog(QDialog):
             self.feed_table.setItem(row, 0, QTableWidgetItem(f.get("title", "")))
             self.feed_table.setItem(row, 1, QTableWidgetItem(f.get("url", "")))
             self.feed_table.setItem(row, 2, QTableWidgetItem(f.get("search", "")))
+            self.feed_table.setItem(row, 3, QTableWidgetItem(f.get("search_custom", "")))
         self.feed_table.resizeColumnsToContents()
 
     def add_feed(self) -> None:
@@ -153,6 +158,7 @@ class ConfigDialog(QDialog):
         res = dlg.get_result()
         if res:
             res["id"] = self.feeds[row].get("id") or generate_feed_id()
+            res["search_custom"] = res.get("search_custom") or self.feeds[row].get("search_custom", "")
             self.feeds[row] = res
             self.load_feeds_into_table()
 
