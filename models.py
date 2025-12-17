@@ -11,10 +11,14 @@ class Ticket:
     subject: str
     status: str
     updated_on: str
+    due_date: str = ""
+    description: str = ""
+    custom_fields: dict[str, str] | None = None
     url: str = ""
     feed_id: str = ""
     feed_title: str = ""
     feed_search: str = ""
+    feed_search_custom: str = ""
     search_hit: bool = False
     done: bool = False
     done_at: str | None = None

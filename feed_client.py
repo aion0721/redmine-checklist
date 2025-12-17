@@ -1,13 +1,29 @@
+import json
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
+from typing import Iterable, Tuple
 
 from constants import ATOM_NS
 from models import Ticket
 
 
+def _split_terms(search: str | Iterable[str]) -> list[str]:
+    if not search:
+        return []
+    if isinstance(search, str):
+        parts = [p.strip() for p in search.split(",")]
+        return [w.lower() for w in parts if w]
+    return [str(w).strip().lower() for w in search if str(w).strip()]
+
+
 def fetch_feed(
-    feed_url: str, api_key: str, feed_id: str, feed_title: str, feed_search: str, timeout: int = 15
+    feed_url: str,
+    api_key: str,
+    feed_id: str,
+    feed_title: str,
+    feed_search: str | list[str],
+    timeout: int = 15,
 ) -> list[Ticket]:
     req = urllib.request.Request(feed_url)
     req.add_header("X-Redmine-API-Key", api_key)
@@ -15,13 +31,35 @@ def fetch_feed(
         data = resp.read()
     root = ET.fromstring(data)
     tickets: list[Ticket] = []
+    terms = _split_terms(feed_search)
     for entry in root.findall("atom:entry", ATOM_NS):
         search_hit = False
-        if feed_search:
-            term = feed_search.lower()
+        if terms:
             title_text = (entry.findtext("atom:title", default="", namespaces=ATOM_NS) or "").lower()
             content_text = (entry.findtext("atom:content", default="", namespaces=ATOM_NS) or "").lower()
-            search_hit = term in title_text or term in content_text
+            search_hit = any(term in title_text or term in content_text for term in terms)
         t = Ticket.from_entry(entry, feed_id, feed_title, feed_search, search_hit)
         tickets.append(t)
     return tickets
+
+
+def fetch_issue_details(issue_url: str, api_key: str, timeout: int = 15) -> dict:
+    """Redmine REST APIから期日・説明・カスタムフィールドを取得する。"""
+    detail_url = issue_url.rstrip("/") + ".json?include=journals"
+    req = urllib.request.Request(detail_url)
+    req.add_header("X-Redmine-API-Key", api_key)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        data = resp.read()
+    payload = json.loads(data.decode("utf-8"))
+    issue = payload.get("issue", {})
+    due_date = issue.get("due_date") or ""
+    custom_fields_map = {}
+    for cf in issue.get("custom_fields", []):
+        name = cf.get("name")
+        value = cf.get("value")
+        if name:
+            custom_fields_map[name] = value or ""
+        if name == "期日" and not due_date:
+            due_date = value or ""
+    description = issue.get("description") or ""
+    return {"due_date": due_date, "description": description, "custom_fields": custom_fields_map}

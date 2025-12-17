@@ -16,8 +16,11 @@ def load_config() -> dict[str, Any]:
                     "title": "Demo feed",
                     "url": "https://redmine.example.com/projects/demo/issues.atom",
                     "search": "",
+                    "search_custom": "",
                 }
             ],
+            "enable_api_details": False,
+            "search_custom_fields": "",
         }
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(default_conf, f, indent=2)
@@ -43,8 +46,9 @@ def normalize_feeds(cfg: dict) -> list[dict]:
             title = f.get("title") or f.get("name") or "feed"
             url = f.get("url") or f.get("feed_url") or ""
             search = f.get("search", "")
+            search_custom = f.get("search_custom", "")
             if url:
-                normed.append({"id": feed_id, "title": title, "url": url, "search": search})
+                normed.append({"id": feed_id, "title": title, "url": url, "search": search, "search_custom": search_custom})
         if normed:
             return normed
     # backward compatibility: single feed_url

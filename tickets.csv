@@ -1,6 +1,7 @@
-ticket_id,subject,status,updated_on,url,feed_id,feed_title,feed_search,search_hit,done,done_at
-1,SampleTickert1,unknown,2025-12-14T04:56:38Z,http://localhost:3000/issues/1,82028396611d48f5897373a870f20d98,aaa,sample,True,True,2025-12-17T20:40:24
-3,新規作成,unknown,2025-12-14T05:09:46Z,http://localhost:3000/issues/3,82028396611d48f5897373a870f20d98,aaa,sample,False,True,2025-12-14T15:46:54
-4,Sample3,unknown,2025-12-14T05:39:57Z,http://localhost:3000/issues/4,82028396611d48f5897373a870f20d98,aaa,sample,True,True,2025-12-14T15:25:08
-5,SearchSample,unknown,2025-12-14T05:56:16Z,http://localhost:3000/issues/5,82028396611d48f5897373a870f20d98,aaa,sample,True,True,2025-12-14T15:24:47
-2,Sample2,unknown,2025-12-14T04:58:10Z,http://localhost:3000/issues/2,919925b16c0d42f984dbc91bcf4c87f4,Project2,,False,False,
+ticket_id,subject,status,updated_on,due_date,description,custom_fields,url,feed_id,feed_title,feed_search,feed_search_custom,search_hit,done,done_at
+1,SampleTickert1,unknown,2025-12-14T04:56:38Z,2025-12-18,,{},http://localhost:3000/issues/1,4f833aa352d24f2d8c09488d5e9f6380,abc,うえ,回答,False,True,2025-12-17T20:40:24
+3,新規作成,unknown,2025-12-14T05:09:46Z,,,{},http://localhost:3000/issues/3,4f833aa352d24f2d8c09488d5e9f6380,abc,うえ,回答,False,True,2025-12-14T15:46:54
+4,Sample3,unknown,2025-12-14T05:39:57Z,,,{},http://localhost:3000/issues/4,4f833aa352d24f2d8c09488d5e9f6380,abc,うえ,回答,False,True,2025-12-14T15:25:08
+5,SearchSample,unknown,2025-12-14T05:56:16Z,2025-12-18,あいうえお,"{""概要"": """", ""回答"": """"}",http://localhost:3000/issues/5,4f833aa352d24f2d8c09488d5e9f6380,abc,うえ,回答,False,False,
+2,Sample2,unknown,2025-12-14T04:58:10Z,,,{},http://localhost:3000/issues/2,919925b16c0d42f984dbc91bcf4c87f4,Project2,,,False,False,
+6,HitSample,unknown,2025-12-17T13:15:10Z,2025-12-18,,"{""概要"": """", ""回答"": ""うえ""}",http://localhost:3000/issues/6,4f833aa352d24f2d8c09488d5e9f6380,abc,うえ,回答,False,False,
